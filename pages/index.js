@@ -1,0 +1,147 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { supabase } from '../lib/supabase';
+import { dayRange, isToday } from '../lib/dates';
+import { sumItems } from '../lib/nutrition';
+import AuthScreen from '../components/AuthScreen';
+import GoalsForm from '../components/GoalsForm';
+import TodayView from '../components/TodayView';
+import HistoryView from '../components/HistoryView';
+import SettingsView from '../components/SettingsView';
+import MealEditor from '../components/MealEditor';
+
+export default function Home() {
+  const [session, setSession] = useState(undefined); // undefined = cargando
+  const [profile, setProfile] = useState(undefined);
+  const [tab, setTab] = useState('hoy');
+  const [date, setDate] = useState(() => new Date());
+  const [meals, setMeals] = useState([]);
+  const [mealsLoading, setMealsLoading] = useState(true);
+  const [photoUrls, setPhotoUrls] = useState({});
+  const [editor, setEditor] = useState(null); // null | { meal? }
+  const [toast, setToast] = useState('');
+
+  const userId = session?.user?.id;
+
+  // ---------- Sesión ----------
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  // ---------- Perfil ----------
+  useEffect(() => {
+    if (!userId) { setProfile(undefined); return; }
+    supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
+      .then(({ data }) => setProfile(data || null));
+  }, [userId]);
+
+  // ---------- Comidas del día ----------
+  const loadMeals = useCallback(async () => {
+    if (!userId) return;
+    setMealsLoading(true);
+    const { start, end } = dayRange(date);
+    const { data } = await supabase.from('meals').select('*')
+      .gte('eaten_at', start).lt('eaten_at', end).order('eaten_at', { ascending: true });
+    const list = data || [];
+    setMeals(list);
+    setMealsLoading(false);
+
+    const paths = list.map((m) => m.photo_path).filter((p) => p && !photoUrls[p]);
+    if (paths.length) {
+      const { data: signed } = await supabase.storage.from('meal-photos').createSignedUrls(paths, 60 * 60 * 24);
+      if (signed) {
+        setPhotoUrls((prev) => {
+          const next = { ...prev };
+          signed.forEach((s) => { if (s.signedUrl) next[s.path] = s.signedUrl; });
+          return next;
+        });
+      }
+    }
+  }, [userId, date]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { if (profile) loadMeals(); }, [profile, loadMeals]);
+
+  const totals = useMemo(() => sumItems(meals), [meals]);
+
+  function flash(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2200);
+  }
+
+  function closeEditor(msg) {
+    setEditor(null);
+    if (typeof msg === 'string') { flash(msg); loadMeals(); }
+  }
+
+  // ---------- Render ----------
+  if (session === undefined || (session && profile === undefined)) {
+    return <div className="loader"><div className="spinner" /></div>;
+  }
+  if (!session) return <AuthScreen />;
+  if (!profile || !profile.protein_target) {
+    return (
+      <div className="app" style={{ paddingBottom: 40 }}>
+        <GoalsForm onboarding userId={userId} profile={profile} onSaved={setProfile} />
+      </div>
+    );
+  }
+
+  // Totales del día sin la comida que se está editando (para calcular lo que queda)
+  const totalsExcluding = editor?.meal ? sumItems(meals.filter((m) => m.id !== editor.meal.id)) : totals;
+  const defaultDate = isToday(date) ? new Date() : (() => { const d = new Date(date); d.setHours(13, 0, 0, 0); return d; })();
+
+  return (
+    <>
+      {toast && <div className="toast" role="status">{toast}</div>}
+      <main className="app">
+        {tab === 'hoy' && (
+          <TodayView profile={profile} meals={meals} totals={totals} photoUrls={photoUrls} loading={mealsLoading}
+            date={date} setDate={setDate} onOpenMeal={(meal) => setEditor({ meal })} />
+        )}
+        {tab === 'historial' && <HistoryView profile={profile} userId={userId} onToast={flash} />}
+        {tab === 'ajustes' && (
+          <SettingsView userId={userId} email={session.user.email} profile={profile}
+            onSaved={(p) => { setProfile(p); flash('Objetivos guardados'); }} />
+        )}
+      </main>
+
+      <nav className="dock" aria-label="Navegación">
+        <div className="dock-inner">
+          {tab === 'hoy' && (
+            <button className="btn btn-primary capture-btn" onClick={() => setEditor({})}>
+              📷  Cargar comida
+            </button>
+          )}
+          <div className="tabs">
+            <Tab id="hoy" ico="🍽️" label="Hoy" tab={tab} setTab={setTab} />
+            <Tab id="historial" ico="📊" label="Historial" tab={tab} setTab={setTab} />
+            <Tab id="ajustes" ico="⚙️" label="Ajustes" tab={tab} setTab={setTab} />
+          </div>
+        </div>
+      </nav>
+
+      {editor && (
+        <MealEditor
+          userId={userId}
+          profile={profile}
+          meal={editor.meal}
+          photoUrl={editor.meal?.photo_path ? photoUrls[editor.meal.photo_path] : null}
+          defaultDate={defaultDate}
+          dayTotals={totalsExcluding}
+          onClose={() => closeEditor()}
+          onSaved={closeEditor}
+          onDeleted={closeEditor}
+        />
+      )}
+    </>
+  );
+}
+
+function Tab({ id, ico, label, tab, setTab }) {
+  return (
+    <button className={`tab ${tab === id ? 'on' : ''}`} onClick={() => setTab(id)} aria-current={tab === id ? 'page' : undefined}>
+      <span className="ico">{ico}</span>{label}
+    </button>
+  );
+}
