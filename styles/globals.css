@@ -12,6 +12,9 @@
   --danger: #ff7a7a;
   --font: 'Bricolage Grotesque', system-ui, -apple-system, sans-serif;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -27,7 +30,11 @@ button, input, select, textarea { font: inherit; color: inherit; }
 img { display: block; max-width: 100%; }
 :focus-visible { outline: 2px solid var(--carbs); outline-offset: 2px; }
 
-.app { max-width: 520px; margin: 0 auto; min-height: 100dvh; padding: 16px 16px calc(150px + var(--safe-bottom)); }
+.app {
+  max-width: 520px; margin: 0 auto; min-height: 100dvh;
+  /* El celu dibuja la barra de estado (hora, batería, notch) encima de la app: dejamos ese espacio libre */
+  padding: calc(20px + var(--safe-top)) calc(16px + var(--safe-right)) calc(150px + var(--safe-bottom)) calc(16px + var(--safe-left));
+}
 
 /* ---------- Tipografía ---------- */
 .h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; margin: 0; line-height: 1.1; }
@@ -159,7 +166,7 @@ img { display: block; max-width: 100%; }
   animation: fade .2s ease;
 }
 .sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; max-height: 94dvh; overflow-y: auto;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; max-height: calc(100dvh - var(--safe-top) - 12px); overflow-y: auto;
   background: var(--bg); border-radius: 24px 24px 0 0; border-top: 1px solid var(--line);
   padding: 10px 16px calc(24px + var(--safe-bottom));
   animation: up .28s cubic-bezier(.2,.8,.2,1);
@@ -244,7 +251,10 @@ img { display: block; max-width: 100%; }
 .panel { background: var(--surface); border-radius: 18px; padding: 16px; margin-bottom: 14px; }
 
 /* ---------- Auth ---------- */
-.auth { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; padding: 24px; max-width: 420px; margin: 0 auto; }
+.auth {
+  min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; max-width: 420px; margin: 0 auto;
+  padding: calc(24px + var(--safe-top)) 24px calc(24px + var(--safe-bottom));
+}
 .wordmark { font-size: 54px; font-weight: 800; letter-spacing: -0.05em; line-height: .9; margin-bottom: 10px; }
 .wordmark span { color: var(--protein); }
 .link-btn { border: 0; background: none; color: var(--carbs); font-weight: 600; cursor: pointer; padding: 8px; }
