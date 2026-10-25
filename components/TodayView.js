@@ -1,9 +1,11 @@
-import { PHASES, mealTypeById, fmt, daysSince } from '../lib/nutrition';
+import { useState } from 'react';
+import { PHASES, mealTypeById, fmt, phaseProgress, weeksLabel } from '../lib/nutrition';
 import { addDays, dayLabel, isToday, timeLabel } from '../lib/dates';
 
-export default function TodayView({ profile, meals, totals, photoUrls, date, setDate, onOpenMeal, loading }) {
+export default function TodayView({ profile, meals, totals, photoUrls, date, setDate, onOpenMeal, loading, onAdvancePhase }) {
   const phase = PHASES[profile.phase] || PHASES.volumen;
-  const day = daysSince(profile.phase_started_on);
+  const prog = phaseProgress(profile);
+  const [advancing, setAdvancing] = useState(false);
   const pGoal = profile.protein_target || 1;
   const pLeft = Math.round(pGoal - totals.protein);
   const kLeft = Math.round((profile.kcal_target || 0) - totals.kcal);
@@ -18,9 +20,54 @@ export default function TodayView({ profile, meals, totals, photoUrls, date, set
             style={{ opacity: isToday(date) ? 0.3 : 1 }} aria-label="Día siguiente">›</button>
         </div>
         <span className="phase-badge" style={{ color: phase.color }}>
-          {phase.emoji} {phase.label}{day ? `, día ${day}` : ''}
+          {phase.emoji} {phase.label}, semana {prog.week}
         </span>
       </div>
+
+      {/* Progreso de la etapa */}
+      {(prog.totalWeeks || prog.next) && !prog.ended && (
+        <div className="phase-strip">
+          <div className="phase-strip-top">
+            <span>
+              {prog.totalWeeks
+                ? <>Semana <strong>{prog.week}</strong> de {prog.totalWeeks}</>
+                : <>Día {prog.day} de {phase.label.toLowerCase()}</>}
+            </span>
+            {prog.next && (
+              <span className="muted">
+                Después: {PHASES[prog.next].label.toLowerCase()}
+                {prog.daysLeft !== null ? ` en ${prog.daysLeft} día${prog.daysLeft === 1 ? '' : 's'}` : ''}
+              </span>
+            )}
+          </div>
+          {prog.pct !== null && (
+            <div className="track"><span style={{ width: `${prog.pct}%`, background: phase.color }} /></div>
+          )}
+        </div>
+      )}
+
+      {/* La etapa terminó según lo planificado */}
+      {prog.ended && isToday(date) && (
+        <div className="phase-next">
+          <strong>Terminaste las {prog.totalWeeks} semanas de {phase.label.toLowerCase()}.</strong>
+          {prog.next ? (
+            <>
+              <p className="small muted">
+                Según tu plan sigue {PHASES[prog.next].label.toLowerCase()}
+                {prog.nextWeeks ? ` durante ${weeksLabel(prog.nextWeeks)}` : ''}. Al pasar, recalculamos tus calorías y mantenemos tu proteína.
+              </p>
+              <button className="btn btn-primary btn-block" disabled={advancing}
+                onClick={async () => { setAdvancing(true); await onAdvancePhase?.(); setAdvancing(false); }}>
+                {advancing ? 'Actualizando…' : `Empezar ${PHASES[prog.next].label.toLowerCase()}`}
+              </button>
+            </>
+          ) : (
+            <p className="small muted" style={{ marginBottom: 0 }}>
+              Si seguís en esta etapa o pasás a otra, actualizalo en Ajustes.
+            </p>
+          )}
+        </div>
+      )}
 
       <section className="hero" aria-label="Proteína del día">
         <div className="hero-num">

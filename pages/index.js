@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { dayRange, isToday } from '../lib/dates';
-import { sumItems } from '../lib/nutrition';
+import { dayRange, isToday, localDateKey } from '../lib/dates';
+import { sumItems, suggestTargets, PHASES } from '../lib/nutrition';
 import AuthScreen from '../components/AuthScreen';
 import GoalsForm from '../components/GoalsForm';
 import TodayView from '../components/TodayView';
@@ -69,6 +69,31 @@ export default function Home() {
     setTimeout(() => setToast(''), 2200);
   }
 
+  // Pasa a la etapa siguiente: arranca hoy, recalcula kcal/HC/grasa y mantiene la proteína
+  async function advancePhase() {
+    const nextPhase = profile.next_phase;
+    if (!nextPhase) return;
+    const s = suggestTargets({ ...profile, phase: nextPhase });
+    const protein = profile.protein_target;
+    const update = {
+      phase: nextPhase,
+      phase_started_on: localDateKey(new Date()),
+      phase_planned_weeks: profile.next_phase_weeks || null,
+      next_phase: null,
+      next_phase_weeks: null,
+      updated_at: new Date().toISOString(),
+    };
+    if (s) {
+      update.kcal_target = s.kcal;
+      update.fat_target = s.fat;
+      update.carbs_target = Math.max(0, Math.round((s.kcal - protein * 4 - s.fat * 9) / 4));
+    }
+    const { data, error } = await supabase.from('profiles').update(update).eq('id', userId).select().single();
+    if (error) return flash('No se pudo actualizar la etapa');
+    setProfile(data);
+    flash(`Arrancaste ${PHASES[nextPhase].label.toLowerCase()}. Revisá tus objetivos en Ajustes.`);
+  }
+
   function closeEditor(msg) {
     setEditor(null);
     if (typeof msg === 'string') { flash(msg); loadMeals(); }
@@ -97,7 +122,7 @@ export default function Home() {
       <main className="app">
         {tab === 'hoy' && (
           <TodayView profile={profile} meals={meals} totals={totals} photoUrls={photoUrls} loading={mealsLoading}
-            date={date} setDate={setDate} onOpenMeal={(meal) => setEditor({ meal })} />
+            date={date} setDate={setDate} onOpenMeal={(meal) => setEditor({ meal })} onAdvancePhase={advancePhase} />
         )}
         {tab === 'historial' && <HistoryView profile={profile} userId={userId} onToast={flash} />}
         {tab === 'ajustes' && (

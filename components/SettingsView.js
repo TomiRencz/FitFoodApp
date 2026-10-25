@@ -6,7 +6,7 @@ export default function SettingsView({ userId, email, profile, onSaved }) {
     <>
       <h1 className="h1" style={{ marginBottom: 6 }}>Ajustes</h1>
       <p className="small muted" style={{ marginTop: 0, marginBottom: 22 }}>
-        Cuando pases de volumen a definición, cambiá la etapa acá y tocá “Usar sugeridos” para recalcular las calorías.
+        Si cargás cuánto dura tu etapa y qué sigue, la app te avisa cuando toca el cambio y recalcula las calorías.
       </p>
 
       <GoalsForm key={profile?.updated_at} userId={userId} profile={profile} onSaved={onSaved} />

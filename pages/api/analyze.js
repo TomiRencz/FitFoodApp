@@ -1,11 +1,9 @@
 // POST /api/analyze
 // Recibe una foto (base64) y/o una descripción en texto, y devuelve los alimentos
 // detectados con gramos estimados y valores nutricionales cada 100 g.
-import { createClient } from '@supabase/supabase-js';
+import { requireUser, geminiJSON } from '../../lib/server';
 
 export const config = { api: { bodyParser: { sizeLimit: '6mb' } } };
-
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
 
 const RESPONSE_SCHEMA = {
   type: 'OBJECT',
@@ -57,70 +55,37 @@ CONTEXTO DEL USUARIO
 - Momento: ${mealType || 'no indicado'}
 - Etapa: ${phaseTxt}
 - Objetivo de proteína por comida: ~${ctx.proteinPerMeal || 42} g
+${ctx.phaseInfo ? `- Momento de la etapa: ${ctx.phaseInfo}` : ''}
+${ctx.experience ? `- Experiencia entrenando: ${ctx.experience}` : ''}
 ${ctx.style ? `- Según su plan, esta comida debería ser: ${ctx.style}` : ''}
 ${ctx.remaining ? `- Le quedan para hoy (antes de esta comida): ${Math.round(ctx.remaining.kcal)} kcal, ${Math.round(ctx.remaining.protein)} g de proteína` : ''}
 
-feedback: 1 o 2 oraciones cortas, en tono amigable y directo (voseo), sobre cómo encaja esta comida con su etapa y su objetivo de proteína. Si falta proteína, sugerí algo concreto para sumar. Nada de sermones.
+${ctx.plan ? `PLAN DE SU NUTRICIONISTA (usalo como referencia principal para el feedback):\n${String(ctx.plan).slice(0, 1500)}\n` : ''}
+feedback: 1 o 2 oraciones cortas, en tono amigable y directo (voseo), sobre cómo encaja esta comida con su etapa y su objetivo de proteína. Si falta proteína, sugerí algo concreto para sumar${ctx.plan ? ' (preferí alimentos que estén en su plan)' : ''}. Si incluye algo que su plan dice evitar, mencionalo sin retar. Nada de sermones.
 ${text ? `\nDESCRIPCIÓN DEL USUARIO: "${String(text).slice(0, 500)}"` : ''}`;
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido' });
-
-  // Solo usuarios logueados pueden usar la API key de Gemini
-  const token = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!token) return res.status(401).json({ error: 'No autorizado' });
-  const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const { data: userData, error: authError } = await supabase.auth.getUser(token);
-  if (authError || !userData?.user) return res.status(401).json({ error: 'Sesión inválida' });
+  const user = await requireUser(req);
+  if (!user) return res.status(401).json({ error: 'No autorizado' });
 
   const { image, text, mealType, context } = req.body || {};
   if (!image && !text) return res.status(400).json({ error: 'Mandá una foto o una descripción' });
-  if (!process.env.GEMINI_API_KEY) return res.status(500).json({ error: 'Falta GEMINI_API_KEY' });
 
   const parts = [];
   if (image) parts.push({ inline_data: { mime_type: 'image/jpeg', data: image } });
   parts.push({ text: buildPrompt({ text, mealType, ctx: context }) });
 
   try {
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts }],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: 'application/json',
-            responseSchema: RESPONSE_SCHEMA,
-          },
-        }),
-      }
-    );
-
-    const data = await r.json();
-    if (!r.ok) {
-      const msg = data?.error?.message || 'Error de Gemini';
-      const status = r.status === 429 ? 429 : 502;
-      return res.status(status).json({
-        error: status === 429 ? 'Se alcanzó el límite gratuito de análisis por ahora. Probá en un rato.' : msg,
-      });
-    }
-
-    const raw = data?.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
-    let parsed;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      return res.status(502).json({ error: 'No pude interpretar la respuesta. Probá de nuevo.' });
-    }
+    const { data: parsed, error, status } = await geminiJSON({ parts, schema: RESPONSE_SCHEMA });
+    if (error) return res.status(status).json({ error });
 
     // Normalizamos y calculamos los totales de cada ítem acá (no confiamos en la cuenta del modelo)
+    const n = (v) => Math.max(0, Number(v) || 0);
     const items = (parsed.items || []).map((i) => {
       const grams = Math.max(0, Math.round(Number(i.grams) || 0));
       const f = grams / 100;
-      const n = (v) => Math.max(0, Number(v) || 0);
       return {
         name: String(i.name || 'Alimento'),
         confidence: i.confidence || 'media',

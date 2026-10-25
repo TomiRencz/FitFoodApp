@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { compressImage } from '../lib/image';
-import { MEAL_TYPES, mealStyle, scaleItem, sumItems, suggestMealType, fmt, round1 } from '../lib/nutrition';
+import { MEAL_TYPES, EXPERIENCE, mealStyle, phaseContext, scaleItem, sumItems, suggestMealType, fmt, round1 } from '../lib/nutrition';
 import { toLocalInput } from '../lib/dates';
 
 export default function MealEditor({ profile, userId, meal, photoUrl, defaultDate, dayTotals, onClose, onSaved, onDeleted }) {
@@ -57,6 +57,9 @@ export default function MealEditor({ profile, userId, meal, photoUrl, defaultDat
           mealType,
           context: {
             phase: profile?.phase,
+            phaseInfo: phaseContext(profile),
+            experience: EXPERIENCE[profile?.training_experience],
+            plan: profile?.plan_summary || undefined,
             proteinPerMeal,
             style: style ? `${style.label} (${style.desc})` : undefined,
             remaining: profile ? {
