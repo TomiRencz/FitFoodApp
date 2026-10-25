@@ -1,13 +1,21 @@
 import GoalsForm from './GoalsForm';
 import { supabase } from '../lib/supabase';
 
-export default function SettingsView({ userId, email, profile, onSaved }) {
+export default function SettingsView({ userId, email, profile, onSaved, onOpenRecords }) {
   return (
     <>
       <h1 className="h1" style={{ marginBottom: 6 }}>Ajustes</h1>
       <p className="small muted" style={{ marginTop: 0, marginBottom: 22 }}>
         Si cargás cuánto dura tu etapa y qué sigue, la app te avisa cuando toca el cambio y recalcula las calorías.
       </p>
+
+      <button className="settings-link" onClick={onOpenRecords}>
+        <span>
+          <strong>Mis registros</strong>
+          <span className="tiny muted" style={{ display: 'block' }}>Ver, editar o borrar comidas y pesos cargados</span>
+        </span>
+        <span className="chev" aria-hidden>›</span>
+      </button>
 
       <GoalsForm key={profile?.updated_at} userId={userId} profile={profile} onSaved={onSaved} />
 

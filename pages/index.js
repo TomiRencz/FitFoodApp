@@ -9,6 +9,7 @@ import HistoryView from '../components/HistoryView';
 import SettingsView from '../components/SettingsView';
 import MealEditor from '../components/MealEditor';
 import PhaseView from '../components/PhaseView';
+import RecordsView from '../components/RecordsView';
 
 export default function Home() {
   const [session, setSession] = useState(undefined); // undefined = cargando
@@ -21,6 +22,8 @@ export default function Home() {
   const [editor, setEditor] = useState(null); // null | { meal? }
   const [toast, setToast] = useState('');
   const [phaseOpen, setPhaseOpen] = useState(false);
+  const [recordsOpen, setRecordsOpen] = useState(false);
+  const [dataVersion, setDataVersion] = useState(0); // sube cuando cambian los registros
 
   const userId = session?.user?.id;
 
@@ -99,6 +102,7 @@ export default function Home() {
   // Abre un día puntual en la pestaña Hoy
   function openDay(d) {
     setPhaseOpen(false);
+    setRecordsOpen(false);
     setDate(new Date(d));
     setTab('hoy');
     window.scrollTo(0, 0);
@@ -106,7 +110,12 @@ export default function Home() {
 
   function closeEditor(msg) {
     setEditor(null);
-    if (typeof msg === 'string') { flash(msg); loadMeals(); }
+    if (typeof msg === 'string') { flash(msg); dataChanged(); }
+  }
+
+  function dataChanged() {
+    loadMeals();
+    setDataVersion((v) => v + 1);
   }
 
   // ---------- Render ----------
@@ -134,9 +143,9 @@ export default function Home() {
           <TodayView profile={profile} meals={meals} totals={totals} photoUrls={photoUrls} loading={mealsLoading}
             date={date} setDate={setDate} onOpenMeal={(meal) => setEditor({ meal })} onAdvancePhase={advancePhase} onOpenPhase={() => setPhaseOpen(true)} />
         )}
-        {tab === 'historial' && <HistoryView profile={profile} userId={userId} onToast={flash} onOpenDay={openDay} />}
+        {tab === 'historial' && <HistoryView key={dataVersion} profile={profile} userId={userId} onToast={flash} onOpenDay={openDay} onOpenRecords={() => setRecordsOpen(true)} />}
         {tab === 'ajustes' && (
-          <SettingsView userId={userId} email={session.user.email} profile={profile}
+          <SettingsView userId={userId} email={session.user.email} profile={profile} onOpenRecords={() => setRecordsOpen(true)}
             onSaved={(p) => { setProfile(p); flash('Objetivos guardados'); }} />
         )}
       </main>
@@ -157,8 +166,14 @@ export default function Home() {
       </nav>
 
       {phaseOpen && (
-        <PhaseView profile={profile} onClose={() => setPhaseOpen(false)} onOpenDay={openDay}
+        <PhaseView key={dataVersion} profile={profile} onClose={() => setPhaseOpen(false)} onOpenDay={openDay}
           onEditPhase={() => { setPhaseOpen(false); setTab('ajustes'); window.scrollTo(0, 0); }} />
+      )}
+
+      {recordsOpen && (
+        <RecordsView userId={userId} reloadKey={dataVersion} onToast={flash} onChanged={dataChanged}
+          onClose={() => setRecordsOpen(false)}
+          onOpenMeal={(meal, url) => setEditor({ meal, photoUrl: url })} />
       )}
 
       {editor && (
@@ -166,7 +181,7 @@ export default function Home() {
           userId={userId}
           profile={profile}
           meal={editor.meal}
-          photoUrl={editor.meal?.photo_path ? photoUrls[editor.meal.photo_path] : null}
+          photoUrl={editor.photoUrl || (editor.meal?.photo_path ? photoUrls[editor.meal.photo_path] : null)}
           defaultDate={defaultDate}
           dayTotals={totalsExcluding}
           onClose={() => closeEditor()}

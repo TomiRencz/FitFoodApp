@@ -13,7 +13,7 @@ const PERIODS = [
   { id: 'etapa', label: 'Etapa' },
 ];
 
-export default function HistoryView({ profile, userId, onToast, onOpenDay }) {
+export default function HistoryView({ profile, userId, onToast, onOpenDay, onOpenRecords }) {
   const [period, setPeriod] = useState('7');
   const [metric, setMetric] = useState('protein');
   const [kgInput, setKgInput] = useState('');
@@ -37,7 +37,10 @@ export default function HistoryView({ profile, userId, onToast, onOpenDay }) {
 
   return (
     <>
-      <h1 className="h1" style={{ marginBottom: 16 }}>Historial</h1>
+      <div className="section-title" style={{ margin: '0 0 16px', alignItems: 'center' }}>
+        <h1 className="h1">Historial</h1>
+        <button className="link-btn" onClick={onOpenRecords}>Editar registros</button>
+      </div>
 
       <div className="segmented" style={{ marginBottom: 18 }}>
         {PERIODS.map((p) => (
