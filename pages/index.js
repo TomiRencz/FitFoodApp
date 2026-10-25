@@ -10,6 +10,7 @@ import SettingsView from '../components/SettingsView';
 import MealEditor from '../components/MealEditor';
 import PhaseView from '../components/PhaseView';
 import RecordsView from '../components/RecordsView';
+import RecipesView from '../components/RecipesView';
 
 export default function Home() {
   const [session, setSession] = useState(undefined); // undefined = cargando
@@ -144,6 +145,10 @@ export default function Home() {
             date={date} setDate={setDate} onOpenMeal={(meal) => setEditor({ meal })} onAdvancePhase={advancePhase} onOpenPhase={() => setPhaseOpen(true)} />
         )}
         {tab === 'historial' && <HistoryView key={dataVersion} profile={profile} userId={userId} onToast={flash} onOpenDay={openDay} onOpenRecords={() => setRecordsOpen(true)} />}
+        {tab === 'recetas' && (
+          <RecipesView userId={userId} profile={profile} dayTotals={isToday(date) ? totals : null} onToast={flash}
+            onMealLogged={(msg) => { flash(msg); dataChanged(); }} />
+        )}
         {tab === 'ajustes' && (
           <SettingsView userId={userId} email={session.user.email} profile={profile} onOpenRecords={() => setRecordsOpen(true)}
             onSaved={(p) => { setProfile(p); flash('Objetivos guardados'); }} />
@@ -160,6 +165,7 @@ export default function Home() {
           <div className="tabs">
             <Tab id="hoy" ico="🍽️" label="Hoy" tab={tab} setTab={setTab} />
             <Tab id="historial" ico="📊" label="Historial" tab={tab} setTab={setTab} />
+            <Tab id="recetas" ico="📖" label="Recetas" tab={tab} setTab={setTab} />
             <Tab id="ajustes" ico="⚙️" label="Ajustes" tab={tab} setTab={setTab} />
           </div>
         </div>
