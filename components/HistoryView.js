@@ -1,136 +1,110 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { addDays, localDateKey } from '../lib/dates';
-import { fmt } from '../lib/nutrition';
+import { localDateKey } from '../lib/dates';
+import { fmt, PHASES } from '../lib/nutrition';
+import { periodRange } from '../lib/stats';
+import { useTracking } from '../lib/useTracking';
+import { DayBars } from './Charts';
+import { StatGrid, MacroAverages, MealTypeBreakdown, TopFoods, WeightPanel, AISummary, statsForAI } from './Insights';
 
-const RANGE = 14;
+const PERIODS = [
+  { id: '7', label: '7 días' },
+  { id: '30', label: '30 días' },
+  { id: 'etapa', label: 'Etapa' },
+];
 
-export default function HistoryView({ profile, userId, onToast }) {
-  const [rows, setRows] = useState([]);
-  const [weights, setWeights] = useState([]);
+export default function HistoryView({ profile, userId, onToast, onOpenDay }) {
+  const [period, setPeriod] = useState('7');
   const [metric, setMetric] = useState('protein');
-  const [loading, setLoading] = useState(true);
-  const [kg, setKg] = useState('');
+  const [kgInput, setKgInput] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  const { from, to } = periodRange(period, profile);
+  const t = useTracking({ from, to, profile, reloadKey });
 
-  async function load() {
-    const start = addDays(new Date(), -(RANGE - 1));
-    start.setHours(0, 0, 0, 0);
-    const [m, w] = await Promise.all([
-      supabase.from('meals').select('eaten_at,kcal,protein,carbs,fat').gte('eaten_at', start.toISOString()),
-      supabase.from('weights').select('logged_on,kg').order('logged_on', { ascending: false }).limit(8),
-    ]);
-    setRows(m.data || []);
-    setWeights(w.data || []);
-    setLoading(false);
-  }
-  useEffect(() => { load(); }, []);
-
-  const days = useMemo(() => {
-    const map = {};
-    rows.forEach((r) => {
-      const k = localDateKey(r.eaten_at);
-      map[k] = map[k] || { kcal: 0, protein: 0 };
-      map[k].kcal += Number(r.kcal) || 0;
-      map[k].protein += Number(r.protein) || 0;
-    });
-    return Array.from({ length: RANGE }, (_, i) => {
-      const d = addDays(new Date(), -(RANGE - 1 - i));
-      const k = localDateKey(d);
-      return { key: k, date: d, ...(map[k] || { kcal: 0, protein: 0 }), logged: !!map[k] };
-    });
-  }, [rows]);
-
-  const logged = days.filter((d) => d.logged);
-  const avg = (f) => (logged.length ? logged.reduce((s, d) => s + d[f], 0) / logged.length : 0);
-  const pGoal = profile.protein_target || 0;
-  const kGoal = profile.kcal_target || 0;
-  const hits = logged.filter((d) => d.protein >= pGoal * 0.95).length;
-
-  const goal = metric === 'protein' ? pGoal : kGoal;
-  const max = Math.max(goal * 1.2, ...days.map((d) => d[metric]), 1);
-  const color = metric === 'protein' ? 'var(--protein)' : 'var(--kcal)';
+  const goal = metric === 'protein' ? profile.protein_target || 0 : profile.kcal_target || 0;
+  const label = period === 'etapa' ? `tu ${PHASES[profile.phase].label.toLowerCase()}` : `los últimos ${period} días`;
 
   async function logWeight(e) {
     e.preventDefault();
-    const val = Number(kg);
+    const val = Number(kgInput);
     if (!val) return;
-    const today = localDateKey(new Date());
-    await supabase.from('weights').upsert({ user_id: userId, logged_on: today, kg: val }, { onConflict: 'user_id,logged_on' });
+    await supabase.from('weights').upsert({ user_id: userId, logged_on: localDateKey(new Date()), kg: val }, { onConflict: 'user_id,logged_on' });
     await supabase.from('profiles').update({ weight_kg: val }).eq('id', userId);
-    setKg('');
+    setKgInput('');
     onToast?.('Peso registrado');
-    load();
+    setReloadKey((k) => k + 1);
   }
 
   return (
     <>
-      <h1 className="h1" style={{ marginBottom: 18 }}>Historial</h1>
+      <h1 className="h1" style={{ marginBottom: 16 }}>Historial</h1>
 
-      <div className="segmented" style={{ marginBottom: 6 }}>
-        <button className={metric === 'protein' ? 'on' : ''} onClick={() => setMetric('protein')}>Proteína</button>
-        <button className={metric === 'kcal' ? 'on' : ''} onClick={() => setMetric('kcal')}>Calorías</button>
+      <div className="segmented" style={{ marginBottom: 18 }}>
+        {PERIODS.map((p) => (
+          <button key={p.id} className={period === p.id ? 'on' : ''} onClick={() => setPeriod(p.id)}>{p.label}</button>
+        ))}
       </div>
 
-      <div className="panel" style={{ marginTop: 12 }}>
-        <div className="small muted">Últimos {RANGE} días. La línea punteada es tu objetivo ({fmt(goal)}{metric === 'protein' ? ' g' : ' kcal'}).</div>
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 50 }}><div className="spinner" /></div>
-        ) : (
-          <>
-            <div className="bars">
-              {goal > 0 && <div className="goal-line" style={{ bottom: `${(goal / max) * 100}%` }} />}
-              {days.map((d) => (
-                <div className="bar-col" key={d.key} title={`${d.key}: ${fmt(d[metric])}`}>
-                  <div className="bar" style={{
-                    height: `${(d[metric] / max) * 100}%`,
-                    background: d.logged ? color : 'var(--surface-2)',
-                  }} />
-                </div>
-              ))}
-            </div>
-            <div className="bar-labels">
-              {days.map((d) => (
-                <span key={d.key} className="bar-lbl">{d.date.toLocaleDateString('es-AR', { weekday: 'narrow' })}</span>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="stat-grid">
-        <div className="stat"><div className="v" style={{ color: 'var(--protein)' }}>{fmt(avg('protein'))} g</div><div className="l">Proteína promedio por día</div></div>
-        <div className="stat"><div className="v">{fmt(avg('kcal'))}</div><div className="l">Kcal promedio por día</div></div>
-        <div className="stat"><div className="v">{hits}/{logged.length}</div><div className="l">Días con la proteína cumplida</div></div>
-        <div className="stat"><div className="v">{logged.length}</div><div className="l">Días registrados de {RANGE}</div></div>
-      </div>
-
-      <h2 className="h2" style={{ marginBottom: 10 }}>Peso</h2>
-      <form className="row" onSubmit={logWeight} style={{ alignItems: 'stretch', marginBottom: 12 }}>
-        <input className="input num" type="number" step="0.1" inputMode="decimal" placeholder="Peso de hoy (kg)"
-          value={kg} onChange={(e) => setKg(e.target.value)} style={{ flex: 2 }} />
-        <button className="btn btn-primary" disabled={!kg}>Registrar</button>
-      </form>
-      {weights.length > 0 ? (
-        <div className="panel">
-          {weights.map((w, i) => {
-            const prev = weights[i + 1];
-            const diff = prev ? Number(w.kg) - Number(prev.kg) : null;
-            return (
-              <div key={w.logged_on} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: i < weights.length - 1 ? '1px solid var(--line)' : 0 }}>
-                <span className="muted">{new Date(w.logged_on + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}</span>
-                <span className="num">
-                  <strong>{Number(w.kg).toLocaleString('es-AR')} kg</strong>
-                  {diff !== null && diff !== 0 && (
-                    <span className="tiny muted" style={{ marginLeft: 8 }}>{diff > 0 ? '+' : ''}{diff.toFixed(1).replace('.', ',')}</span>
-                  )}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+      {t.loading ? (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><div className="spinner" /></div>
       ) : (
-        <p className="small muted">Registrá tu peso una vez por semana, en ayunas, para ver cómo evoluciona entre volumen y definición.</p>
+        <>
+          <StatGrid summary={t.summary} profile={profile} />
+
+          <section className="panel">
+            <div className="section-title" style={{ margin: 0 }}>
+              <h3 className="panel-title" style={{ margin: 0 }}>Día por día</h3>
+              <div className="mini-seg">
+                <button className={metric === 'protein' ? 'on' : ''} onClick={() => setMetric('protein')}>Proteína</button>
+                <button className={metric === 'kcal' ? 'on' : ''} onClick={() => setMetric('kcal')}>Kcal</button>
+              </div>
+            </div>
+            <DayBars days={t.days} metric={metric} goal={goal} unit={metric === 'protein' ? ' g' : ' kcal'}
+              color={metric === 'protein' ? 'var(--protein)' : 'var(--kcal)'} compactLabels={period !== '7'} />
+            {t.summary.best && (
+              <div className="best-worst">
+                <button className="bw" onClick={() => onOpenDay?.(t.summary.best.date)}>
+                  <span className="tiny muted">Mejor día</span>
+                  <span><strong className="num">{fmt(t.summary.best.protein)} g</strong> <span className="muted small">{dayShort(t.summary.best.date)}</span></span>
+                </button>
+                {t.summary.worst && (
+                  <button className="bw" onClick={() => onOpenDay?.(t.summary.worst.date)}>
+                    <span className="tiny muted">Día más flojo</span>
+                    <span><strong className="num">{fmt(t.summary.worst.protein)} g</strong> <span className="muted small">{dayShort(t.summary.worst.date)}</span></span>
+                  </button>
+                )}
+              </div>
+            )}
+            <div style={{ marginTop: 16 }}><MacroAverages summary={t.summary} profile={profile} /></div>
+          </section>
+
+          {t.summary.loggedDays > 0 ? (
+            <>
+              <MealTypeBreakdown mealTypes={t.mealTypes} perMealGoal={t.perMealGoal} />
+              <TopFoods foods={t.foods} />
+            </>
+          ) : (
+            <div className="empty" style={{ marginBottom: 14 }}>
+              <p><strong style={{ color: 'var(--text)' }}>No hay comidas registradas en este período.</strong></p>
+              <p className="small">Cuando cargues comidas, acá vas a ver tus promedios y qué comidas se quedan cortas de proteína.</p>
+            </div>
+          )}
+
+          <WeightPanel weight={t.weight} profile={profile} />
+          <form className="row" onSubmit={logWeight} style={{ alignItems: 'stretch', marginBottom: 14 }}>
+            <input className="input num" type="number" step="0.1" inputMode="decimal" placeholder="Peso de hoy (kg)"
+              value={kgInput} onChange={(e) => setKgInput(e.target.value)} style={{ flex: 2 }} />
+            <button className="btn btn-primary" disabled={!kgInput}>Registrar</button>
+          </form>
+
+          {t.summary.loggedDays > 0 && (
+            <AISummary key={period} profile={profile} label={label}
+              stats={statsForAI({ label, profile, perMealGoal: t.perMealGoal, ...t })} />
+          )}
+        </>
       )}
     </>
   );
 }
+
+const dayShort = (d) => d.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });

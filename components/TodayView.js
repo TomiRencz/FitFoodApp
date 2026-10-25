@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { PHASES, mealTypeById, fmt, phaseProgress, weeksLabel } from '../lib/nutrition';
 import { addDays, dayLabel, isToday, timeLabel } from '../lib/dates';
 
-export default function TodayView({ profile, meals, totals, photoUrls, date, setDate, onOpenMeal, loading, onAdvancePhase }) {
+export default function TodayView({ profile, meals, totals, photoUrls, date, setDate, onOpenMeal, loading, onAdvancePhase, onOpenPhase }) {
   const phase = PHASES[profile.phase] || PHASES.volumen;
   const prog = phaseProgress(profile);
   const [advancing, setAdvancing] = useState(false);
@@ -19,9 +19,9 @@ export default function TodayView({ profile, meals, totals, photoUrls, date, set
           <button className="icon-btn" onClick={() => setDate(addDays(date, 1))} disabled={isToday(date)}
             style={{ opacity: isToday(date) ? 0.3 : 1 }} aria-label="Día siguiente">›</button>
         </div>
-        <span className="phase-badge" style={{ color: phase.color }}>
-          {phase.emoji} {phase.label}, semana {prog.week}
-        </span>
+        <button className="phase-badge" style={{ color: phase.color }} onClick={onOpenPhase} aria-label="Ver mi etapa">
+          {phase.emoji} {phase.label}, semana {prog.week} <span className="chev" aria-hidden>›</span>
+        </button>
       </div>
 
       {/* Progreso de la etapa */}

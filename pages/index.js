@@ -8,6 +8,7 @@ import TodayView from '../components/TodayView';
 import HistoryView from '../components/HistoryView';
 import SettingsView from '../components/SettingsView';
 import MealEditor from '../components/MealEditor';
+import PhaseView from '../components/PhaseView';
 
 export default function Home() {
   const [session, setSession] = useState(undefined); // undefined = cargando
@@ -19,6 +20,7 @@ export default function Home() {
   const [photoUrls, setPhotoUrls] = useState({});
   const [editor, setEditor] = useState(null); // null | { meal? }
   const [toast, setToast] = useState('');
+  const [phaseOpen, setPhaseOpen] = useState(false);
 
   const userId = session?.user?.id;
 
@@ -94,6 +96,14 @@ export default function Home() {
     flash(`Arrancaste ${PHASES[nextPhase].label.toLowerCase()}. Revisá tus objetivos en Ajustes.`);
   }
 
+  // Abre un día puntual en la pestaña Hoy
+  function openDay(d) {
+    setPhaseOpen(false);
+    setDate(new Date(d));
+    setTab('hoy');
+    window.scrollTo(0, 0);
+  }
+
   function closeEditor(msg) {
     setEditor(null);
     if (typeof msg === 'string') { flash(msg); loadMeals(); }
@@ -122,9 +132,9 @@ export default function Home() {
       <main className="app">
         {tab === 'hoy' && (
           <TodayView profile={profile} meals={meals} totals={totals} photoUrls={photoUrls} loading={mealsLoading}
-            date={date} setDate={setDate} onOpenMeal={(meal) => setEditor({ meal })} onAdvancePhase={advancePhase} />
+            date={date} setDate={setDate} onOpenMeal={(meal) => setEditor({ meal })} onAdvancePhase={advancePhase} onOpenPhase={() => setPhaseOpen(true)} />
         )}
-        {tab === 'historial' && <HistoryView profile={profile} userId={userId} onToast={flash} />}
+        {tab === 'historial' && <HistoryView profile={profile} userId={userId} onToast={flash} onOpenDay={openDay} />}
         {tab === 'ajustes' && (
           <SettingsView userId={userId} email={session.user.email} profile={profile}
             onSaved={(p) => { setProfile(p); flash('Objetivos guardados'); }} />
@@ -145,6 +155,11 @@ export default function Home() {
           </div>
         </div>
       </nav>
+
+      {phaseOpen && (
+        <PhaseView profile={profile} onClose={() => setPhaseOpen(false)} onOpenDay={openDay}
+          onEditPhase={() => { setPhaseOpen(false); setTab('ajustes'); window.scrollTo(0, 0); }} />
+      )}
 
       {editor && (
         <MealEditor
